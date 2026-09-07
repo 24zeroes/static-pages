@@ -65,6 +65,7 @@
   ];
   const CHECKLIST = ["креатин"];
 
+  const cap = s => s[0].toUpperCase() + s.slice(1);   // display only, keys stay lowercase
   const tg = window.Telegram && window.Telegram.WebApp;
   const scores = {};
   const KEY = "routine-draft";
@@ -77,8 +78,8 @@
   const scalesEl = document.getElementById("scales");
   SCALES.forEach(name => {
     const wrap = document.createElement("div");
-    wrap.className = "scale";
-    wrap.innerHTML = `<div class="label"><b>${name}</b><span class="val" data-val="${name}">–</span></div>`;
+    wrap.className = "scale"; wrap.dataset.scale = name;
+    wrap.innerHTML = `<div class="label"><b>${cap(name)}</b><span class="val" data-val="${name}">–</span></div>`;
     const chips = document.createElement("div");
     chips.className = "chips";
     for (let v = 1; v <= 10; v++) {
@@ -95,7 +96,7 @@
   CHECKLIST.forEach(item => {
     const l = document.createElement("label");
     l.className = "check";
-    l.innerHTML = `<input type="checkbox" data-check="${item}"> ${item}`;
+    l.innerHTML = `<input type="checkbox" data-check="${item}"> ${cap(item)}`;
     l.querySelector("input").onchange = saveDraft;
     checksEl.appendChild(l);
   });
@@ -150,8 +151,7 @@
       const d = JSON.parse(localStorage.getItem(KEY) || "null");
       if (!d || d.day !== now.toDateString()) return;
       Object.entries(d.scores || {}).forEach(([n, v]) => {
-        const chips = [...document.querySelectorAll(".scale")]
-          .find(s => s.querySelector("b").textContent === n)?.querySelector(".chips");
+        const chips = document.querySelector(`.scale[data-scale="${n}"] .chips`);
         if (chips) pick(n, v, chips);
       });
       (d.checks || []).forEach(i => {
