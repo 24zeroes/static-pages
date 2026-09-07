@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Состояние</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: var(--tg-theme-bg-color, #fff);
+    --fg: var(--tg-theme-text-color, #111);
+    --hint: var(--tg-theme-hint-color, #888);
+    --accent: var(--tg-theme-button-color, #2481cc);
+    --accent-fg: var(--tg-theme-button-text-color, #fff);
+    --chip: var(--tg-theme-secondary-bg-color, #f0f0f0);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; padding: 12px 12px 90px;
+    background: var(--bg); color: var(--fg);
+    font: 16px/1.3 -apple-system, system-ui, Roboto, sans-serif;
+  }
+  h1 { font-size: 17px; margin: 4px 0 14px; font-weight: 600; }
+  .scale { margin-bottom: 14px; }
+  .label { display: flex; justify-content: space-between; margin-bottom: 6px; }
+  .label b { font-weight: 500; }
+  .label .val { color: var(--hint); min-width: 1.5em; text-align: right; }
+  .chips { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; }
+  .chip {
+    height: 40px; border: 0; border-radius: 8px;
+    background: var(--chip); color: var(--fg); font-size: 15px;
+  }
+  .chip.on { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
+  .check { display: flex; align-items: center; gap: 10px; padding: 10px 0; }
+  .check input { width: 22px; height: 22px; accent-color: var(--accent); }
+  textarea {
+    width: 100%; min-height: 80px; margin-top: 6px; padding: 10px;
+    border: 0; border-radius: 10px; background: var(--chip); color: var(--fg);
+    font: inherit; resize: vertical;
+  }
+  .hint { color: var(--hint); font-size: 13px; margin-top: 16px; }
+  #fallback {
+    position: fixed; left: 12px; right: 12px; bottom: 12px; height: 48px;
+    border: 0; border-radius: 10px; background: var(--accent); color: var(--accent-fg);
+    font: inherit; font-weight: 600; display: none;
+  }
+</style>
+</head>
+<body>
+<h1 id="title">Состояние</h1>
+<div id="scales"></div>
+<div id="checks"></div>
+<textarea id="text" placeholder="Сегодня сделано / планы (необязательно)"></textarea>
+<div class="hint" id="hint">Заполни все шесть шкал, чтобы отправить.</div>
+<button id="fallback">Отправить</button>
+
+<script>
+  const SCALES = [
+    "энергия",
+    "усталость",
+    "боль/забитость",
+    "настроение",
+    "желание тренироваться",
+    "качество сна",
+  ];
+  const CHECKLIST = ["креатин"];
+
+  const tg = window.Telegram && window.Telegram.WebApp;
+  const scores = {};
+  const KEY = "routine-draft";
+
+  const now = new Date();
+  document.getElementById("title").textContent =
+    "Состояние " + String(now.getDate()).padStart(2, "0") + "." +
+    String(now.getMonth() + 1).padStart(2, "0");
+
+  const scalesEl = document.getElementById("scales");
+  SCALES.forEach(name => {
+    const wrap = document.createElement("div");
+    wrap.className = "scale";
+    wrap.innerHTML = `<div class="label"><b>${name}</b><span class="val" data-val="${name}">–</span></div>`;
+    const chips = document.createElement("div");
+    chips.className = "chips";
+    for (let v = 1; v <= 10; v++) {
+      const b = document.createElement("button");
+      b.className = "chip"; b.textContent = v; b.type = "button";
+      b.onclick = () => pick(name, v, chips);
+      chips.appendChild(b);
+    }
+    wrap.appendChild(chips);
+    scalesEl.appendChild(wrap);
+  });
+
+  const checksEl = document.getElementById("checks");
+  CHECKLIST.forEach(item => {
+    const l = document.createElement("label");
+    l.className = "check";
+    l.innerHTML = `<input type="checkbox" data-check="${item}"> ${item}`;
+    l.querySelector("input").onchange = saveDraft;
+    checksEl.appendChild(l);
+  });
+
+  function pick(name, v, chips) {
+    scores[name] = v;
+    [...chips.children].forEach(c => c.classList.toggle("on", +c.textContent === v));
+    document.querySelector(`[data-val="${name}"]`).textContent = v;
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
+    saveDraft(); refresh();
+  }
+
+  function complete() { return SCALES.every(n => scores[n]); }
+
+  function payload() {
+    return {
+      v: 1,
+      scores,
+      checks: CHECKLIST.filter(i => document.querySelector(`[data-check="${i}"]`).checked),
+      text: document.getElementById("text").value.trim(),
+    };
+  }
+
+  function refresh() {
+    const ok = complete();
+    document.getElementById("hint").textContent =
+      ok ? "" : "Заполни все шесть шкал, чтобы отправить.";
+    if (tg) {
+      tg.MainButton.setText("Отправить");
+      ok ? tg.MainButton.show() : tg.MainButton.hide();
+    } else {
+      document.getElementById("fallback").style.display = ok ? "block" : "none";
+    }
+  }
+
+  function submit() {
+    if (!complete()) return;
+    const data = JSON.stringify(payload());
+    try { localStorage.removeItem(KEY); } catch (e) {}
+    if (tg) tg.sendData(data);           // closes the web app on success
+    else alert(data);
+  }
+
+  // draft survives an accidental close within the same day
+  function saveDraft() {
+    try {
+      localStorage.setItem(KEY, JSON.stringify({ day: now.toDateString(), ...payload() }));
+    } catch (e) {}
+  }
+  function loadDraft() {
+    try {
+      const d = JSON.parse(localStorage.getItem(KEY) || "null");
+      if (!d || d.day !== now.toDateString()) return;
+      Object.entries(d.scores || {}).forEach(([n, v]) => {
+        const chips = [...document.querySelectorAll(".scale")]
+          .find(s => s.querySelector("b").textContent === n)?.querySelector(".chips");
+        if (chips) pick(n, v, chips);
+      });
+      (d.checks || []).forEach(i => {
+        const el = document.querySelector(`[data-check="${i}"]`); if (el) el.checked = true;
+      });
+      document.getElementById("text").value = d.text || "";
+    } catch (e) {}
+  }
+
+  document.getElementById("text").oninput = saveDraft;
+  document.getElementById("fallback").onclick = submit;
+  if (tg) {
+    tg.ready(); tg.expand();
+    tg.MainButton.onClick(submit);
+  }
+  loadDraft(); refresh();
+</script>
+</body>
+</html>
